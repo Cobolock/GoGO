@@ -1,6 +1,7 @@
 package main
 
 import (
+    "os"
     "log"
     "fmt"
     "time"
@@ -13,10 +14,12 @@ import (
     "github.com/tealeg/xlsx"
     "github.com/kardianos/service"
     _ "github.com/go-sql-driver/mysql"
+    "golang.org/x/sys/windows/registry"
     simplejson "github.com/bitly/go-simplejson"
 )
 
 var logger service.Logger
+var Path string 
 
 type program struct{}
 
@@ -40,7 +43,7 @@ type LogString struct {
 func checkErr(err error) {
     if err != nil{
         t := fmt.Sprintf("%v\n", err)
-        ioutil.WriteFile("C:\\SphinxService\\log.txt", []byte(t), 0644)
+        ioutil.WriteFile(Path +"log.txt", []byte(t), 0644)
         panic(err)
     }
 }
@@ -63,7 +66,9 @@ func (p *program) run() {
     var q string
     var daySend int = 0
 
-    jsFile, err := ioutil.ReadFile("C:\\SphinxService\\config.json")
+    conf, err := os.Stat(Path + "config.json")
+
+    jsFile, err := ioutil.ReadFile(Path +"config.json")
     checkErr(err)
 
     jsData, err := simplejson.NewJson(jsFile)
@@ -162,6 +167,12 @@ func (p *program) run() {
         nowHour := int(time.Time.Hour(time.Now()))
         nowMin := int(time.Time.Minute(time.Now()))
 
+        check, err := os.Stat(Path + "config.json")
+        if conf.ModTime() != check.ModTime() {
+            go p.run()
+            return
+        }
+
         if today == 0 {
             today = 7
         }
@@ -251,10 +262,10 @@ func (p *program) run() {
                     cell.Value = v.Text
                 }
 
-                err = file.Save("C:\\SphinxService\\spnx.xlsx")
+                err = file.Save(Path + "spnx.xlsx")
                 checkErr(err)
 
-                xlsxFile, _ := ioutil.ReadFile("C:\\SphinxService\\spnx.xlsx")
+                xlsxFile, _ := ioutil.ReadFile(Path + "spnx.xlsx")
                 checkErr(err)
 
                 encoded := base64.StdEncoding.EncodeToString(xlsxFile)
@@ -371,6 +382,16 @@ func (p *program) Start(s service.Service) error {
 }
 
 func main() {
+
+    k, err := registry.OpenKey(registry.LOCAL_MACHINE, "SOFTWARE\\INT",registry.QUERY_VALUE)
+    checkErr(err)
+    defer k.Close()
+
+    Path, _, err = k.GetStringValue("WorkingDirectory")
+    checkErr(err)
+
+    fmt.Printf("%s\n", Path)
+
     svcConfig := &service.Config{
         Name:        "SphinxMailer",
         DisplayName: "SphinxMailer",
