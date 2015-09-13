@@ -1,6 +1,7 @@
 package main
 
 import (
+    "log"
     "fmt"
     "time"
     "bytes"
@@ -10,9 +11,14 @@ import (
     "database/sql"
     "encoding/base64"
     "github.com/tealeg/xlsx"
+    "github.com/kardianos/service"
     _ "github.com/go-sql-driver/mysql"
     simplejson "github.com/bitly/go-simplejson"
 )
+
+var logger service.Logger
+
+type program struct{}
 
 type EmailUser struct {
     Username    string
@@ -34,7 +40,7 @@ type LogString struct {
 func checkErr(err error) {
     if err != nil{
         t := fmt.Sprintf("%v\n", err)
-        ioutil.WriteFile("log.txt", []byte(t), 0644)
+        ioutil.WriteFile("C:\\SphinxService\\log.txt", []byte(t), 0644)
         panic(err)
     }
 }
@@ -51,13 +57,13 @@ func getDBVErsion(db *sql.DB, dbv *int) {
     checkErr(err)
 }
 
-func main() {
+func (p *program) run() {
 
     var id, dbv int
     var q string
     var daySend int = 0
 
-    jsFile, err := ioutil.ReadFile("config.json")
+    jsFile, err := ioutil.ReadFile("C:\\SphinxService\\config.json")
     checkErr(err)
 
     jsData, err := simplejson.NewJson(jsFile)
@@ -245,10 +251,10 @@ func main() {
                     cell.Value = v.Text
                 }
 
-                err = file.Save("spnx.xlsx")
+                err = file.Save("C:\\SphinxService\\spnx.xlsx")
                 checkErr(err)
 
-                xlsxFile, _ := ioutil.ReadFile("spnx.xlsx")
+                xlsxFile, _ := ioutil.ReadFile("C:\\SphinxService\\spnx.xlsx")
                 checkErr(err)
 
                 encoded := base64.StdEncoding.EncodeToString(xlsxFile)
@@ -350,5 +356,38 @@ func main() {
         }
 
         time.Sleep(5 * time.Second)
+    }
+}
+
+func (p *program) Stop(s service.Service) error {
+    // Stop should not block. Return with a few seconds.
+    return nil
+}
+
+func (p *program) Start(s service.Service) error {
+    // Start should not block. Do the actual work async.
+    go p.run()
+    return nil
+}
+
+func main() {
+    svcConfig := &service.Config{
+        Name:        "GoServiceExampleSimple",
+        DisplayName: "Go Service Example",
+        Description: "This is an example Go service.",
+    }
+
+    prg := &program{}
+    s, err := service.New(prg, svcConfig)
+    if err != nil {
+        log.Fatal(err)
+    }
+    logger, err = s.Logger(nil)
+    if err != nil {
+        log.Fatal(err)
+    }
+    err = s.Run()
+    if err != nil {
+        logger.Error(err)
     }
 }
