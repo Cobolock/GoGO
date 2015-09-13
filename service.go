@@ -372,9 +372,9 @@ func (p *program) Start(s service.Service) error {
 
 func main() {
     svcConfig := &service.Config{
-        Name:        "GoServiceExampleSimple",
-        DisplayName: "Go Service Example",
-        Description: "This is an example Go service.",
+        Name:        "SphinxMailer",
+        DisplayName: "SphinxMailer",
+        Description: "Отправляет письма при обнаружении событий в СКУД Сфинкс.",
     }
 
     prg := &program{}
