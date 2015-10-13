@@ -16,6 +16,7 @@ import (
 	"os"
 	"strconv"
 	"time"
+	"tls"
 )
 
 var logger service.Logger
@@ -389,11 +390,29 @@ func (p *program) run() {
 
 			conn, err := tls.Dial("tcp", emailUser.EmailServer+":"+strconv.Itoa(emailUser.Port), tlc)
 			checkErr(err)
-			err = c.StartTLS(tlc)
+
+			c, err := smtp.NewClient(conn, emailUser.EmailServer)
+			checkErr(err)
+			
+			err = c.Auth(auth)
 			checkErr(err)
 
-			
+			err = c.Mail(emailUser.Username)
+			checkErr(err)
 
+			err = c.Rcpt([]string{jsSettings["mail_to"].(string)})
+			checkErr(err)
+
+			w, err := c.Data()
+			checkErr(err)
+
+			_, err := w.Write([]byte(message))
+			checkErr(err)
+
+			err = w.Close()
+			checkErr(err)
+
+			c.Quit()
 
 		}
 
