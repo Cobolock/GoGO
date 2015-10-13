@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"crypto/tls"
 	"database/sql"
 	"encoding/base64"
 	"fmt"
@@ -16,7 +17,6 @@ import (
 	"os"
 	"strconv"
 	"time"
-	"crypto/tls"
 )
 
 var logger service.Logger
@@ -289,7 +289,6 @@ func (p *program) run() {
 					[]string{jsSettings["mail_to"].(string)},
 					[]byte(message))
 				checkErr(err)*/
-				
 
 				daySend = today
 			}
@@ -357,7 +356,7 @@ func (p *program) run() {
 
 			tlc := &tls.Config{
 				InsecureSkipVerify: true,
-				ServerName: emailUser.EmailServer,
+				ServerName:         emailUser.EmailServer,
 			}
 
 			conn, err := tls.Dial("tcp", emailUser.EmailServer+":"+strconv.Itoa(emailUser.Port), tlc)
@@ -365,7 +364,7 @@ func (p *program) run() {
 
 			c, err := smtp.NewClient(conn, emailUser.EmailServer)
 			checkErr(err)
-			
+
 			err = c.Auth(auth)
 			checkErr(err)
 
