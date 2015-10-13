@@ -374,13 +374,27 @@ func (p *program) run() {
 			}
 			message += "\r\n" + text
 
-			err = smtp.SendMail(
+			/*err = smtp.SendMail(
 				emailUser.EmailServer+": "+strconv.Itoa(emailUser.Port),
 				auth,
 				emailUser.Username,
 				[]string{jsSettings["mail_to"].(string)},
 				[]byte(message))
+			checkErr(err)*/
+
+			tlc := &tls.Config{
+				InsecureSkipVerify: true,
+				ServerName: emailUser.EmailServer,
+			}
+
+			conn, err := tls.Dial("tcp", emailUser.EmailServer+":"+strconv.Itoa(emailUser.Port), tlc)
 			checkErr(err)
+			err = c.StartTLS(tlc)
+			checkErr(err)
+
+			
+
+
 		}
 
 		time.Sleep(5 * time.Second)
