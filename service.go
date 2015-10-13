@@ -16,7 +16,7 @@ import (
 	"os"
 	"strconv"
 	"time"
-	"tls"
+	"crypto/tls"
 )
 
 var logger service.Logger
