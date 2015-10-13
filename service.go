@@ -55,12 +55,6 @@ func getLastId(db *sql.DB, id *int) {
 	checkErr(err)
 }
 
-func getDBVErsion(db *sql.DB, dbv *int) {
-	q := "SELECT PARAMVALUE FROM `tc-db-main`.parami WHERE NAME='DBVER'"
-	err := db.QueryRow(q).Scan(*&dbv)
-	checkErr(err)
-}
-
 func decodePass(code string) string {
 	p := ""
 	for l := 0; l < len(code); l += 2 {
@@ -72,7 +66,7 @@ func decodePass(code string) string {
 
 func (p *program) run() {
 
-	var id, dbv int
+	var id int
 	var q string
 	var daySend int = 0
 
@@ -156,29 +150,16 @@ func (p *program) run() {
 	checkErr(err)
 
 	getLastId(db, &id)
-	getDBVErsion(db, &dbv)
 
-	if dbv <= 161 {
-		q = `SELECT l.LOGTIME, l.CLIENTIP,
-            CASE WHEN ISNULL(u.NAME) THEN '<Нет>' ELSE (u.NAME) END AS UNAME,
-            CASE WHEN ISNULL(d.NAME) THEN '<Нет>' ELSE (d.NAME) END AS DNAME,
-            p.USERNAME as OPNAME, l.TEXT
-            FROM ` + "`tc-db-main`" + `.userlog AS l
-            LEFT OUTER JOIN ` + "`tc-db-main`" + `.devices AS d ON l.APID=d.ID
-            LEFT OUTER JOIN ` + "`tc-db-main`" + `.personal as u ON l.OBJID=u.ID
-            LEFT OUTER JOIN ` + "`tc-common`" + `.profiles as p ON l.USERID=p.ID
-            WHERE l.ID > ? ` + summaryFilters + ` ORDER BY l.LOGTIME`
-	} else {
-		q = `SELECT l.LOGTIME, l.CLIENTIP,
-            CASE WHEN ISNULL(u.NAME) THEN '<Нет>' ELSE (u.NAME) END AS UNAME,
-            CASE WHEN ISNULL(d.NAME) THEN '<Нет>' ELSE (d.NAME) END AS DNAME,
-            l.TEXT, p.NAME as OPNAME
-            FROM ` + "`tc-db-main`" + `.userlog AS l
-            LEFT OUTER JOIN ` + "`tc-db-main`" + `.devices AS d ON l.APID=d.ID
-            LEFT OUTER JOIN ` + "`tc-db-main`" + `.personal as u ON l.OBJID=u.ID
-            LEFT OUTER JOIN ` + "`tc-db-main`" + `.personal as p ON l.USERID=p.ID
-            WHERE l.ID > ? ` + summaryFilters + ` ORDER BY l.LOGTIME`
-	}
+	q = `SELECT l.LOGTIME, l.CLIENTIP,
+        CASE WHEN ISNULL(u.NAME) THEN '<Нет>' ELSE (u.NAME) END AS UNAME,
+        CASE WHEN ISNULL(d.NAME) THEN '<Нет>' ELSE (d.NAME) END AS DNAME,
+        l.TEXT, p.NAME as OPNAME
+        FROM ` + "`tc-db-main`" + `.userlog AS l
+        LEFT OUTER JOIN ` + "`tc-db-main`" + `.devices AS d ON l.APID=d.ID
+        LEFT OUTER JOIN ` + "`tc-db-main`" + `.personal as u ON l.OBJID=u.ID
+        LEFT OUTER JOIN ` + "`tc-db-main`" + `.personal as p ON l.USERID=p.ID
+        WHERE l.ID > ? ` + summaryFilters + ` ORDER BY l.LOGTIME`
 
 	for true {
 		today := int(time.Time.Weekday(time.Now()))
@@ -201,28 +182,15 @@ func (p *program) run() {
 				now := time.Now()
 				qxls := ""
 
-				// I'm very sorry for that
-				if dbv <= 161 {
-					qxls = `SELECT l.LOGTIME, l.CLIENTIP,
-                        CASE WHEN ISNULL(u.NAME) THEN '<Нет>' ELSE (u.NAME) END AS UNAME,
-                        CASE WHEN ISNULL(d.NAME) THEN '<Нет>' ELSE (d.NAME) END AS DNAME,
-                        p.USERNAME as OPNAME, l.TEXT
-                        FROM ` + "`tc-db-main`" + `.userlog AS l
-                        LEFT OUTER JOIN ` + "`tc-db-main`" + `.devices AS d ON l.APID=d.ID
-                        LEFT OUTER JOIN ` + "`tc-db-main`" + `.personal as u ON l.OBJID=u.ID
-                        LEFT OUTER JOIN ` + "`tc-common`" + `.profiles as p ON l.USERID=p.ID
-                        WHERE l.LOGTIME BETWEEN '` + weekAgo.Format(time.RFC3339) + `' AND '` + now.Format(time.RFC3339) + `' ` + summaryFilters + ` ORDER BY l.LOGTIME`
-				} else {
-					qxls = `SELECT l.LOGTIME, l.CLIENTIP,
-                        CASE WHEN ISNULL(u.NAME) THEN '<Нет>' ELSE (u.NAME) END AS UNAME,
-                        CASE WHEN ISNULL(d.NAME) THEN '<Нет>' ELSE (d.NAME) END AS DNAME,
-                        l.TEXT, p.NAME as OPNAME
-                        FROM ` + "`tc-db-main`" + `.userlog AS l
-                        LEFT OUTER JOIN ` + "`tc-db-main`" + `.devices AS d ON l.APID=d.ID
-                        LEFT OUTER JOIN ` + "`tc-db-main`" + `.personal as u ON l.OBJID=u.ID
-                        LEFT OUTER JOIN ` + "`tc-db-main`" + `.personal as p ON l.USERID=p.ID
-                        WHERE l.LOGTIME BETWEEN '` + weekAgo.Format(time.RFC3339) + `' AND '` + now.Format(time.RFC3339) + `' ` + summaryFilters + ` ORDER BY l.LOGTIME`
-				}
+				qxls = `SELECT l.LOGTIME, l.CLIENTIP,
+                    CASE WHEN ISNULL(u.NAME) THEN '<Нет>' ELSE (u.NAME) END AS UNAME,
+                    CASE WHEN ISNULL(d.NAME) THEN '<Нет>' ELSE (d.NAME) END AS DNAME,
+                    l.TEXT, p.NAME as OPNAME
+                    FROM ` + "`tc-db-main`" + `.userlog AS l
+                    LEFT OUTER JOIN ` + "`tc-db-main`" + `.devices AS d ON l.APID=d.ID
+                    LEFT OUTER JOIN ` + "`tc-db-main`" + `.personal as u ON l.OBJID=u.ID
+                    LEFT OUTER JOIN ` + "`tc-db-main`" + `.personal as p ON l.USERID=p.ID
+                    WHERE l.LOGTIME BETWEEN '` + weekAgo.Format(time.RFC3339) + `' AND '` + now.Format(time.RFC3339) + `' ` + summaryFilters + ` ORDER BY l.LOGTIME`
 
 				rowsXls, err := db.Query(qxls)
 				checkErr(err)
@@ -311,13 +279,17 @@ func (p *program) run() {
 				}
 				message += "\r\n" + fmt.Sprintf("%s\r\n", buf.String())
 
-				err = smtp.SendMail(
+				//Needs TLS interception
+				//So commented for now
+				//TODO: uncomment and redo
+				/*err = smtp.SendMail(
 					emailUser.EmailServer+": "+strconv.Itoa(emailUser.Port),
 					auth,
 					emailUser.Username,
 					[]string{jsSettings["mail_to"].(string)},
 					[]byte(message))
-				checkErr(err)
+				checkErr(err)*/
+				
 
 				daySend = today
 			}
