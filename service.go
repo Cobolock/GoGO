@@ -16,7 +16,6 @@ import (
 	"net/smtp"
 	"os"
 	"strconv"
-	// "strings"
 	"time"
 )
 
@@ -33,7 +32,6 @@ type EmailUser struct {
 }
 
 type LogString struct {
-	// LogTime     time.Time
 	LogTime  string
 	ClientIp string
 	DName    string
@@ -41,39 +39,6 @@ type LogString struct {
 	Text     string
 	OpName   string
 }
-
-// type loginAuth struct {
-//     username, password string
-// }
-
-// // loginAuth returns an Auth that implements the LOGIN authentication
-// // mechanism as defined in RFC 4616.
-// func LoginAuth(username, password string) smtp.Auth {
-//     return &loginAuth{username, password}
-// }
-
-// func (a *loginAuth) Start(server *smtp.ServerInfo) (string, []byte, error) {
-//     return "LOGIN", nil, nil
-// }
-
-// func (a *loginAuth) Next(fromServer []byte, more bool) ([]byte, error) {
-//     command := string(fromServer)
-//     command = strings.TrimSpace(command)
-//     command = strings.TrimSuffix(command, ":")
-//     command = strings.ToLower(command)
-
-//     if more {
-//         if (command == "username") {
-//             return []byte(fmt.Sprintf("%s", a.username)), nil
-//         } else if (command == "password") {
-//             return []byte(fmt.Sprintf("%s", a.password)), nil
-//         } else {
-//             // We've already sent everything.
-//             return nil, fmt.Errorf("unexpected server challenge: %s", command)
-//         }
-//     }
-//     return nil, nil
-// }
 
 func SendMail(from, to, server, port, message string) {
 	tlc := &tls.Config{
@@ -86,9 +51,6 @@ func SendMail(from, to, server, port, message string) {
 
 	err = c.StartTLS(tlc)
 	checkErr(err)
-
-	// err = c.Auth(auth)
-	// checkErr(err)
 
 	err = c.Mail(from)
 	checkErr(err)
@@ -166,11 +128,6 @@ func (p *program) run() {
 		jsSettings["mail_server"].(string),
 		jsMailPort,
 	}
-
-	// auth := LoginAuth(
-	// 	emailUser.Username,
-	// 	emailUser.Password,
-	// )
 
 	usersList := ""
 	lim := ""
@@ -345,16 +302,6 @@ func (p *program) run() {
 				}
 				message += "\r\n" + fmt.Sprintf("%s\r\n", buf.String())
 
-				//Needs TLS interception
-				//So commented for now
-				//TODO: uncomment and redo
-				/*err = smtp.SendMail(
-					emailUser.EmailServer+": "+strconv.Itoa(emailUser.Port),
-					auth,
-					emailUser.Username,
-					[]string{jsSettings["mail_to"].(string)},
-					[]byte(message))
-				checkErr(err)*/
 				SendMail(emailUser.Username,
 					 jsSettings["mail_to"].(string),
 					 emailUser.EmailServer,
@@ -418,13 +365,6 @@ func (p *program) run() {
 			}
 			message += "\r\n" + text
 
-			/*err = smtp.SendMail(
-				emailUser.EmailServer+": "+strconv.Itoa(emailUser.Port),
-				auth,
-				emailUser.Username,
-				[]string{jsSettings["mail_to"].(string)},
-				[]byte(message))
-			checkErr(err)*/
 			SendMail(emailUser.Username,
 					 jsSettings["mail_to"].(string),
 					 emailUser.EmailServer,
