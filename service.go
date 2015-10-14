@@ -16,6 +16,7 @@ import (
 	"net/smtp"
 	"os"
 	"strconv"
+	// "strings"
 	"time"
 )
 
@@ -39,6 +40,72 @@ type LogString struct {
 	UName    string
 	Text     string
 	OpName   string
+}
+
+// type loginAuth struct {
+//     username, password string
+// }
+
+// // loginAuth returns an Auth that implements the LOGIN authentication
+// // mechanism as defined in RFC 4616.
+// func LoginAuth(username, password string) smtp.Auth {
+//     return &loginAuth{username, password}
+// }
+
+// func (a *loginAuth) Start(server *smtp.ServerInfo) (string, []byte, error) {
+//     return "LOGIN", nil, nil
+// }
+
+// func (a *loginAuth) Next(fromServer []byte, more bool) ([]byte, error) {
+//     command := string(fromServer)
+//     command = strings.TrimSpace(command)
+//     command = strings.TrimSuffix(command, ":")
+//     command = strings.ToLower(command)
+
+//     if more {
+//         if (command == "username") {
+//             return []byte(fmt.Sprintf("%s", a.username)), nil
+//         } else if (command == "password") {
+//             return []byte(fmt.Sprintf("%s", a.password)), nil
+//         } else {
+//             // We've already sent everything.
+//             return nil, fmt.Errorf("unexpected server challenge: %s", command)
+//         }
+//     }
+//     return nil, nil
+// }
+
+func SendMail(from, to, server, port, message string) {
+	tlc := &tls.Config{
+		InsecureSkipVerify: true,
+		ServerName:         server,
+	}
+
+	c, err := smtp.Dial(server + ":" + port)
+	checkErr(err)
+
+	err = c.StartTLS(tlc)
+	checkErr(err)
+
+	// err = c.Auth(auth)
+	// checkErr(err)
+
+	err = c.Mail(from)
+	checkErr(err)
+
+	err = c.Rcpt(to)
+	checkErr(err)
+
+	w, err := c.Data()
+	checkErr(err)
+
+	_, err = w.Write([]byte(message))
+	checkErr(err)
+
+	err = w.Close()
+	checkErr(err)
+
+	c.Quit()
 }
 
 func checkErr(err error) {
@@ -100,11 +167,10 @@ func (p *program) run() {
 		jsMailPort,
 	}
 
-	auth := smtp.PlainAuth("",
-		emailUser.Username,
-		emailUser.Password,
-		emailUser.EmailServer,
-	)
+	// auth := LoginAuth(
+	// 	emailUser.Username,
+	// 	emailUser.Password,
+	// )
 
 	usersList := ""
 	lim := ""
@@ -289,6 +355,12 @@ func (p *program) run() {
 					[]string{jsSettings["mail_to"].(string)},
 					[]byte(message))
 				checkErr(err)*/
+				SendMail(emailUser.Username,
+					 jsSettings["mail_to"].(string),
+					 emailUser.EmailServer,
+					 strconv.Itoa(emailUser.Port),
+					 message,
+					 )
 
 				daySend = today
 			}
@@ -353,37 +425,13 @@ func (p *program) run() {
 				[]string{jsSettings["mail_to"].(string)},
 				[]byte(message))
 			checkErr(err)*/
-
-			tlc := &tls.Config{
-				InsecureSkipVerify: true,
-				ServerName:         emailUser.EmailServer,
-			}
-
-			conn, err := tls.Dial("tcp", emailUser.EmailServer+":"+strconv.Itoa(emailUser.Port), tlc)
-			checkErr(err)
-
-			c, err := smtp.NewClient(conn, emailUser.EmailServer)
-			checkErr(err)
-
-			err = c.Auth(auth)
-			checkErr(err)
-
-			err = c.Mail(emailUser.Username)
-			checkErr(err)
-
-			err = c.Rcpt([]string{jsSettings["mail_to"].(string)})
-			checkErr(err)
-
-			w, err := c.Data()
-			checkErr(err)
-
-			_, err := w.Write([]byte(message))
-			checkErr(err)
-
-			err = w.Close()
-			checkErr(err)
-
-			c.Quit()
+			SendMail(emailUser.Username,
+					 jsSettings["mail_to"].(string),
+					 emailUser.EmailServer,
+					 strconv.Itoa(emailUser.Port),
+					 message,
+					 )
+			
 
 		}
 
