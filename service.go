@@ -2,10 +2,11 @@ package main
 
 import (
 	"bytes"
+	"crypto/tls"
 	"database/sql"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
-	simplejson "github.com/bitly/go-simplejson"
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/kardianos/service"
 	"github.com/tealeg/xlsx"
@@ -16,7 +17,6 @@ import (
 	"os"
 	"strconv"
 	"time"
-	"crypto/tls"
 )
 
 var logger service.Logger
@@ -32,13 +32,46 @@ type EmailUser struct {
 }
 
 type LogString struct {
-	// LogTime     time.Time
 	LogTime  string
 	ClientIp string
 	DName    string
 	UName    string
 	Text     string
 	OpName   string
+}
+
+type Config struct {
+	Settings struct {
+		MailFrom   string        `json:"mail_from,omitempty"`
+		MailPass   string        `json:"mail_pass,omitempty"`
+		MailServer string        `json:"mail_server,omitempty"`
+		MailTo     string        `json:"mail_to,omitempty"`
+		ServerIp   string        `json:"server_ip,omitempty"`
+		ServerPass string        `json:"server_pass,omitempty"`
+		ServerUser string        `json:"server_user,omitempty"`
+		Day1       int           `json:"day_1,omitempty"`
+		Day2       int           `json:"day_2,omitempty"`
+		Day3       int           `json:"day_3,omitempty"`
+		Day4       int           `json:"day_4,omitempty"`
+		Day5       int           `json:"day_5,omitempty"`
+		Day6       int           `json:"day_6,omitempty"`
+		Day7       int           `json:"day_7,omitempty"`
+		Delay      time.Duration `json:"delay",omitempty"`
+		DoorsFlag  int           `json:"doors_flag,omitempty"`
+		EcD        int           `json:"ecD,omitempty"`
+		EcIP       int           `json:"ecIP,omitempty"`
+		EcO        int           `json:"ecO,omitempty"`
+		EcU        int           `json:"ecU,omitempty"`
+		StartHour  int           `json:"start_hour,omitempty"`
+		StartMin   int           `json:"start_min,omitempty"`
+		UsersFlag  int           `json:"users_flag,omitempty"`
+		MailPort   int           `json:"mail_port,omitempty"`
+		ServerPort int           `json:"server_Port,omitempty"`
+	} `json:"settings"`
+	Filters struct {
+		Doors map[string]int
+		Users map[string]int
+	} `json:"filters"`
 }
 
 func checkErr(err error) {
@@ -49,15 +82,57 @@ func checkErr(err error) {
 	}
 }
 
+func SendMail(from, to, server, port, message string) {
+	tlc := &tls.Config{
+		InsecureSkipVerify: true,
+		ServerName:         server,
+	}
+
+	c, err := smtp.Dial(server + ":" + port)
+	checkErr(err)
+
+	err = c.StartTLS(tlc)
+	checkErr(err)
+
+	err = c.Mail(from)
+	checkErr(err)
+
+	err = c.Rcpt(to)
+	checkErr(err)
+
+	w, err := c.Data()
+	checkErr(err)
+
+	_, err = w.Write([]byte(message))
+	checkErr(err)
+
+	err = w.Close()
+	checkErr(err)
+
+	c.Quit()
+}
+
+func getJSON(fileName string) Config {
+
+	var C Config
+
+	C.Settings.MailPort = 25
+	C.Settings.ServerPort = 3305
+	C.Settings.ServerUser = "root"
+	C.Settings.Delay = 30
+
+	jsFile, err := ioutil.ReadFile(fileName)
+	checkErr(err)
+
+	err = json.Unmarshal(jsFile, &C)
+	checkErr(err)
+
+	return C
+}
+
 func getLastId(db *sql.DB, id *int) {
 	q := "SELECT id FROM `tc-db-main`.userlog ORDER BY id DESC LIMIT 1"
 	err := db.QueryRow(q).Scan(*&id)
-	checkErr(err)
-}
-
-func getDBVErsion(db *sql.DB, dbv *int) {
-	q := "SELECT PARAMVALUE FROM `tc-db-main`.parami WHERE NAME='DBVER'"
-	err := db.QueryRow(q).Scan(*&dbv)
 	checkErr(err)
 }
 
@@ -72,52 +147,31 @@ func decodePass(code string) string {
 
 func (p *program) run() {
 
-	var id, dbv int
+	var id int
 	var q string
 	var daySend int = 0
 
 	conf, err := os.Stat(Path + "config.json")
 
-	jsFile, err := ioutil.ReadFile(Path + "config.json")
-	checkErr(err)
+	config := getJSON(Path + "config.json")
 
-	jsData, err := simplejson.NewJson(jsFile)
-	checkErr(err)
+	cS := config.Settings
+	cF := config.Filters
 
-	jsSettings, _ := jsData.Get("settings").Map()
-	jsMailPort, _ := jsData.Get("settings").Get("mail_port").Int()
-	usersFlag, _ := jsData.Get("settings").Get("users_flag").Int()
-	doorsFlag, _ := jsData.Get("settings").Get("doors_flag").Int()
-	sendHour, _ := jsData.Get("settings").Get("start_hour").Int()
-	sendMin, _ := jsData.Get("settings").Get("start_min").Int()
-
-	days := []int{}
-	for i := 1; i <= 7; i++ {
-		t, _ := jsData.Get("settings").Get("day_" + strconv.Itoa(i)).Int()
-		if t == 1 {
-			days = append(days, i)
-		}
-	}
+	days := []int{cS.Day1, cS.Day2, cS.Day3, cS.Day4, cS.Day5, cS.Day6, cS.Day7}
 
 	emailUser := &EmailUser{
-		jsSettings["mail_from"].(string),
-		decodePass(jsSettings["mail_pass"].(string)),
-		jsSettings["mail_server"].(string),
-		jsMailPort,
+		cS.MailFrom,
+		decodePass(cS.MailPass),
+		cS.MailServer,
+		cS.MailPort,
 	}
-
-	auth := smtp.PlainAuth("",
-		emailUser.Username,
-		emailUser.Password,
-		emailUser.EmailServer,
-	)
 
 	usersList := ""
 	lim := ""
 
-	usersMap, _ := jsData.Get("filters").Get("users").Map()
-	for k, _ := range usersMap {
-		a, _ := jsData.Get("filters").Get("users").Get(k).Int()
+	for k, _ := range cF.Users {
+		a := cF.Users[k]
 		if a == 1 {
 			usersList += lim + k
 		}
@@ -127,9 +181,8 @@ func (p *program) run() {
 	doorsList := ""
 	lim = ""
 
-	doorsMap, _ := jsData.Get("filters").Get("doors").Map()
-	for k, _ := range doorsMap {
-		a, _ := jsData.Get("filters").Get("doors").Get(k).Int()
+	for k, _ := range cF.Doors {
+		a, _ := cF.Doors[k]
 		if a == 1 {
 			doorsList += lim + k
 		}
@@ -137,48 +190,35 @@ func (p *program) run() {
 	}
 
 	summaryFilters := ""
-	if usersList != "" && usersFlag == 1 {
+	if usersList != "" && cS.UsersFlag == 1 {
 		summaryFilters += " AND l.USERID IN (" + usersList + ")"
 	}
-	if doorsList != "" && doorsFlag == 1 {
+	if doorsList != "" && cS.DoorsFlag == 1 {
 		summaryFilters += " AND l.APID IN (" + doorsList + ")"
 	}
 
 	db, err := sql.Open("mysql",
-		jsSettings["server_user"].(string)+
+		cS.ServerUser+
 			":"+
-			decodePass(jsSettings["server_pass"].(string))+
+			decodePass(cS.ServerPass)+
 			"@tcp("+
-			jsSettings["server_ip"].(string)+
+			cS.ServerIp+
 			":"+
-			jsSettings["server_port"].(string)+
+			strconv.Itoa(cS.ServerPort)+
 			")/")
 	checkErr(err)
 
 	getLastId(db, &id)
-	getDBVErsion(db, &dbv)
 
-	if dbv <= 161 {
-		q = `SELECT l.LOGTIME, l.CLIENTIP,
-            CASE WHEN ISNULL(u.NAME) THEN '<Нет>' ELSE (u.NAME) END AS UNAME,
-            CASE WHEN ISNULL(d.NAME) THEN '<Нет>' ELSE (d.NAME) END AS DNAME,
-            p.USERNAME as OPNAME, l.TEXT
-            FROM ` + "`tc-db-main`" + `.userlog AS l
-            LEFT OUTER JOIN ` + "`tc-db-main`" + `.devices AS d ON l.APID=d.ID
-            LEFT OUTER JOIN ` + "`tc-db-main`" + `.personal as u ON l.OBJID=u.ID
-            LEFT OUTER JOIN ` + "`tc-common`" + `.profiles as p ON l.USERID=p.ID
-            WHERE l.ID > ? ` + summaryFilters + ` ORDER BY l.LOGTIME`
-	} else {
-		q = `SELECT l.LOGTIME, l.CLIENTIP,
-            CASE WHEN ISNULL(u.NAME) THEN '<Нет>' ELSE (u.NAME) END AS UNAME,
-            CASE WHEN ISNULL(d.NAME) THEN '<Нет>' ELSE (d.NAME) END AS DNAME,
-            l.TEXT, p.NAME as OPNAME
-            FROM ` + "`tc-db-main`" + `.userlog AS l
-            LEFT OUTER JOIN ` + "`tc-db-main`" + `.devices AS d ON l.APID=d.ID
-            LEFT OUTER JOIN ` + "`tc-db-main`" + `.personal as u ON l.OBJID=u.ID
-            LEFT OUTER JOIN ` + "`tc-db-main`" + `.personal as p ON l.USERID=p.ID
-            WHERE l.ID > ? ` + summaryFilters + ` ORDER BY l.LOGTIME`
-	}
+	q = `SELECT l.LOGTIME, l.CLIENTIP,
+        CASE WHEN ISNULL(u.NAME) THEN '<Нет>' ELSE (u.NAME) END AS UNAME,
+        CASE WHEN ISNULL(d.NAME) THEN '<Нет>' ELSE (d.NAME) END AS DNAME,
+        l.TEXT, p.NAME as OPNAME
+        FROM ` + "`tc-db-main`" + `.userlog AS l
+        LEFT OUTER JOIN ` + "`tc-db-main`" + `.devices AS d ON l.APID=d.ID
+        LEFT OUTER JOIN ` + "`tc-db-main`" + `.personal as u ON l.OBJID=u.ID
+        LEFT OUTER JOIN ` + "`tc-db-main`" + `.personal as p ON l.USERID=p.ID
+        WHERE l.ID > ? ` + summaryFilters + ` ORDER BY l.LOGTIME`
 
 	for true {
 		today := int(time.Time.Weekday(time.Now()))
@@ -196,33 +236,20 @@ func (p *program) run() {
 		}
 
 		for _, v := range days {
-			if v == today && sendHour == nowHour && sendMin == nowMin && daySend != today {
+			if v == today && cS.StartHour == nowHour && cS.StartMin == nowMin && daySend != today {
 				weekAgo := time.Time.AddDate(time.Now(), 0, 0, -7)
 				now := time.Now()
 				qxls := ""
 
-				// I'm very sorry for that
-				if dbv <= 161 {
-					qxls = `SELECT l.LOGTIME, l.CLIENTIP,
-                        CASE WHEN ISNULL(u.NAME) THEN '<Нет>' ELSE (u.NAME) END AS UNAME,
-                        CASE WHEN ISNULL(d.NAME) THEN '<Нет>' ELSE (d.NAME) END AS DNAME,
-                        p.USERNAME as OPNAME, l.TEXT
-                        FROM ` + "`tc-db-main`" + `.userlog AS l
-                        LEFT OUTER JOIN ` + "`tc-db-main`" + `.devices AS d ON l.APID=d.ID
-                        LEFT OUTER JOIN ` + "`tc-db-main`" + `.personal as u ON l.OBJID=u.ID
-                        LEFT OUTER JOIN ` + "`tc-common`" + `.profiles as p ON l.USERID=p.ID
-                        WHERE l.LOGTIME BETWEEN '` + weekAgo.Format(time.RFC3339) + `' AND '` + now.Format(time.RFC3339) + `' ` + summaryFilters + ` ORDER BY l.LOGTIME`
-				} else {
-					qxls = `SELECT l.LOGTIME, l.CLIENTIP,
-                        CASE WHEN ISNULL(u.NAME) THEN '<Нет>' ELSE (u.NAME) END AS UNAME,
-                        CASE WHEN ISNULL(d.NAME) THEN '<Нет>' ELSE (d.NAME) END AS DNAME,
-                        l.TEXT, p.NAME as OPNAME
-                        FROM ` + "`tc-db-main`" + `.userlog AS l
-                        LEFT OUTER JOIN ` + "`tc-db-main`" + `.devices AS d ON l.APID=d.ID
-                        LEFT OUTER JOIN ` + "`tc-db-main`" + `.personal as u ON l.OBJID=u.ID
-                        LEFT OUTER JOIN ` + "`tc-db-main`" + `.personal as p ON l.USERID=p.ID
-                        WHERE l.LOGTIME BETWEEN '` + weekAgo.Format(time.RFC3339) + `' AND '` + now.Format(time.RFC3339) + `' ` + summaryFilters + ` ORDER BY l.LOGTIME`
-				}
+				qxls = `SELECT l.LOGTIME, l.CLIENTIP,
+                    CASE WHEN ISNULL(u.NAME) THEN '<Нет>' ELSE (u.NAME) END AS UNAME,
+                    CASE WHEN ISNULL(d.NAME) THEN '<Нет>' ELSE (d.NAME) END AS DNAME,
+                    l.TEXT, p.NAME as OPNAME
+                    FROM ` + "`tc-db-main`" + `.userlog AS l
+                    LEFT OUTER JOIN ` + "`tc-db-main`" + `.devices AS d ON l.APID=d.ID
+                    LEFT OUTER JOIN ` + "`tc-db-main`" + `.personal as u ON l.OBJID=u.ID
+                    LEFT OUTER JOIN ` + "`tc-db-main`" + `.personal as p ON l.USERID=p.ID
+                    WHERE l.LOGTIME BETWEEN '` + weekAgo.Format(time.RFC3339) + `' AND '` + now.Format(time.RFC3339) + `' ` + summaryFilters + ` ORDER BY l.LOGTIME`
 
 				rowsXls, err := db.Query(qxls)
 				checkErr(err)
@@ -260,19 +287,19 @@ func (p *program) run() {
 					cell = row.AddCell()
 					cell.Value = v.LogTime
 
-					if t, _ := jsData.Get("settings").Get("ecU").Int(); t == 1 {
+					if t := cS.EcU; t == 1 {
 						cell = row.AddCell()
 						cell.Value = v.OpName
 					}
-					if t, _ := jsData.Get("settings").Get("ecIP").Int(); t == 1 {
+					if t := cS.EcIP; t == 1 {
 						cell = row.AddCell()
 						cell.Value = v.ClientIp
 					}
-					if t, _ := jsData.Get("settings").Get("ecD").Int(); t == 1 {
+					if t := cS.EcD; t == 1 {
 						cell = row.AddCell()
 						cell.Value = v.DName
 					}
-					if t, _ := jsData.Get("settings").Get("ecO").Int(); t == 1 {
+					if t := cS.EcO; t == 1 {
 						cell = row.AddCell()
 						cell.Value = v.UName
 					}
@@ -298,7 +325,7 @@ func (p *program) run() {
 
 				header := make(map[string]string)
 				header["From"] = emailUser.Username
-				header["To"] = jsSettings["mail_to"].(string)
+				header["To"] = cS.MailTo
 				header["Subject"] = "Отчёт"
 				header["MIME-Version"] = "1.0"
 				header["Content-Type"] = "application/csv; name=\"spnx.xlsx\""
@@ -311,13 +338,12 @@ func (p *program) run() {
 				}
 				message += "\r\n" + fmt.Sprintf("%s\r\n", buf.String())
 
-				err = smtp.SendMail(
-					emailUser.EmailServer+": "+strconv.Itoa(emailUser.Port),
-					auth,
-					emailUser.Username,
-					[]string{jsSettings["mail_to"].(string)},
-					[]byte(message))
-				checkErr(err)
+				SendMail(emailUser.Username,
+					cS.MailTo,
+					emailUser.EmailServer,
+					strconv.Itoa(emailUser.Port),
+					message,
+				)
 
 				daySend = today
 			}
@@ -349,16 +375,16 @@ func (p *program) run() {
 			text := ""
 			for _, v := range logStrings {
 				text += fmt.Sprintf("%s", v.LogTime)
-				if t, _ := jsData.Get("settings").Get("ecU").Int(); t == 1 {
+				if t := cS.EcU; t == 1 {
 					text += fmt.Sprintf("\tПользователь: %s", v.OpName)
 				}
-				if t, _ := jsData.Get("settings").Get("ecIP").Int(); t == 1 {
+				if t := cS.EcIP; t == 1 {
 					text += fmt.Sprintf(" (%s)", v.ClientIp)
 				}
-				if t, _ := jsData.Get("settings").Get("ecD").Int(); t == 1 {
+				if t := cS.EcD; t == 1 {
 					text += fmt.Sprintf("\tТочка прохода: %s", v.DName)
 				}
-				if t, _ := jsData.Get("settings").Get("ecO").Int(); t == 1 {
+				if t := cS.EcO; t == 1 {
 					text += fmt.Sprintf("\tОбъект: %s", v.UName)
 				}
 				text += fmt.Sprintf("\t%s\n", v.Text)
@@ -366,7 +392,7 @@ func (p *program) run() {
 
 			header := make(map[string]string)
 			header["From"] = emailUser.Username
-			header["To"] = jsSettings["mail_to"].(string)
+			header["To"] = cS.MailTo
 			header["Subject"] = "Отчёт"
 
 			message := ""
@@ -375,48 +401,16 @@ func (p *program) run() {
 			}
 			message += "\r\n" + text
 
-			/*err = smtp.SendMail(
-				emailUser.EmailServer+": "+strconv.Itoa(emailUser.Port),
-				auth,
-				emailUser.Username,
-				[]string{jsSettings["mail_to"].(string)},
-				[]byte(message))
-			checkErr(err)*/
-
-			tlc := &tls.Config{
-				InsecureSkipVerify: true,
-				ServerName: emailUser.EmailServer,
-			}
-
-			conn, err := tls.Dial("tcp", emailUser.EmailServer+":"+strconv.Itoa(emailUser.Port), tlc)
-			checkErr(err)
-
-			c, err := smtp.NewClient(conn, emailUser.EmailServer)
-			checkErr(err)
-			
-			err = c.Auth(auth)
-			checkErr(err)
-
-			err = c.Mail(emailUser.Username)
-			checkErr(err)
-
-			err = c.Rcpt([]string{jsSettings["mail_to"].(string)})
-			checkErr(err)
-
-			w, err := c.Data()
-			checkErr(err)
-
-			_, err := w.Write([]byte(message))
-			checkErr(err)
-
-			err = w.Close()
-			checkErr(err)
-
-			c.Quit()
+			SendMail(emailUser.Username,
+				cS.MailTo,
+				emailUser.EmailServer,
+				strconv.Itoa(emailUser.Port),
+				message,
+			)
 
 		}
 
-		time.Sleep(5 * time.Second)
+		time.Sleep(cS.Delay * time.Second)
 	}
 }
 
